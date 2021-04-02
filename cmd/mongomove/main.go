@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/bounoable/mongomove"
@@ -19,6 +20,7 @@ func main() {
 	prefix := flag.String("prefix", "", "Database prefix (filter)")
 	drop := flag.Bool("drop", false, "Drop target databases before import")
 	skipConfirm := flag.Bool("confirm", false, "Don't ask for confirmation")
+	parallel := flag.Int("parallel", 1, "Control parallelism")
 	verbose := flag.Bool("verbose", false, "Log debug info")
 
 	// short flags
@@ -27,6 +29,7 @@ func main() {
 	flag.StringVar(prefix, "p", "", "Database prefix (filter)")
 	flag.BoolVar(drop, "d", false, "Drop target databases before import")
 	flag.BoolVar(skipConfirm, "c", false, "Don't ask for confirmation")
+	flag.IntVar(parallel, "p", 1, "Control parallelism")
 	flag.BoolVar(verbose, "v", false, "Log debug info")
 
 	flag.Parse()
@@ -43,8 +46,8 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Kill, os.Interrupt)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, os.Interrupt)
 	go func() {
 		defer cancel()
 		<-quit
@@ -79,6 +82,7 @@ func main() {
 	if *verbose {
 		opts = append(opts, mongomove.Verbose(true))
 	}
+	opts = append(opts, mongomove.Parallel(*parallel))
 
 	start := time.Now()
 	if err := i.Import(ctx, opts...); err != nil {

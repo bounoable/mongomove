@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -34,6 +35,7 @@ type importConfig struct {
 	skipConfirm bool
 	verbose     bool
 	pingTimeout time.Duration
+	parallel    int
 }
 
 // FilterDatabases returns an ImportOption which filters databases by their
@@ -85,6 +87,14 @@ func Verbose(v bool) ImportOption {
 	}
 }
 
+// Parallel returns an ImportOption that specififies how many databases should
+// be imported in parallel.
+func Parallel(p int) ImportOption {
+	return func(cfg *importConfig) {
+		cfg.parallel = p
+	}
+}
+
 // New returns an Importer that imports databases from source to target. New
 // panics if source or target is nil.
 func New(source, target *mongo.Client) *Importer {
@@ -109,6 +119,9 @@ func (i *Importer) Import(ctx context.Context, opts ...ImportOption) error {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	if cfg.parallel < 1 {
+		cfg.parallel = 1
+	}
 
 	if err := i.ping(ctx, cfg.pingTimeout); err != nil {
 		return fmt.Errorf("ping: %w", err)
@@ -131,26 +144,57 @@ func (i *Importer) Import(ctx context.Context, opts ...ImportOption) error {
 		os.Exit(1)
 	}
 
-	group, ctx := errgroup.WithContext(ctx)
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	wg.Add(cfg.parallel)
+
+	errors := make(chan error)
+	for index := 0; index < cfg.parallel; index++ {
+		go func() {
+			defer wg.Done()
+			for name := range jobs {
+				db := i.source.Database(name)
+				if err := cfg.dropDB(ctx, i.target.Database(name)); err != nil {
+					select {
+					case <-ctx.Done():
+						return
+					case errors <- fmt.Errorf("drop %q database: %w", name, err):
+					}
+				}
+				if err := i.importDatabase(ctx, cfg, db); err != nil {
+					select {
+					case <-ctx.Done():
+						return
+					case errors <- fmt.Errorf("import %q database: %w", name, err):
+					}
+				}
+			}
+		}()
+	}
+
 	for _, name := range names {
-		name := name
-		group.Go(func() error {
-			db := i.source.Database(name)
-			if err := cfg.dropDB(ctx, i.target.Database(name)); err != nil {
-				return fmt.Errorf("drop %q database: %w", name, err)
-			}
-			if err := i.importDatabase(ctx, cfg, db); err != nil {
-				return fmt.Errorf("import %q database: %w", name, err)
-			}
-			return nil
-		})
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case jobs <- name:
+		}
 	}
+	close(jobs)
 
-	if err := group.Wait(); err != nil {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errors:
 		return err
+	case <-done:
+		return nil
 	}
-
-	return nil
 }
 
 func (i *Importer) ping(ctx context.Context, timeout time.Duration) error {
