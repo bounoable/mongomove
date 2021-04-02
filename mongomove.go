@@ -287,8 +287,10 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 		}
 	}
 
-	if _, err := target.InsertMany(ctx, buf); err != nil {
-		return fmt.Errorf("insert documents: %w", err)
+	if len(buf) > 0 {
+		if _, err := target.InsertMany(ctx, buf); err != nil {
+			return fmt.Errorf("insert documents: %w", err)
+		}
 	}
 
 	if err := cur.Err(); err != nil {
