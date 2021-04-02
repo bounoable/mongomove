@@ -26,7 +26,6 @@ func main() {
 	// short flags
 	flag.StringVar(source, "s", "mongodb://127.0.0.1:27017", "Source URI")
 	flag.StringVar(target, "t", "mongodb://127.0.0.1:27018", "Target URI")
-	flag.StringVar(prefix, "p", "", "Database prefix (filter)")
 	flag.BoolVar(drop, "d", false, "Drop target databases before import")
 	flag.BoolVar(skipConfirm, "c", false, "Don't ask for confirmation")
 	flag.IntVar(parallel, "p", 1, "Control parallelism")
