@@ -253,20 +253,30 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 
 	target := i.target.Database(col.Database().Name()).Collection(col.Name())
 
-	cur, err := col.Find(ctx, bson.M{})
+	cur, err := col.Find(ctx, bson.M{}, options.Find().SetNoCursorTimeout(true))
 	if err != nil {
 		return fmt.Errorf("find all documents: %w", err)
 	}
 	defer cur.Close(ctx)
+
+	buf := make([]interface{}, 0, 100)
 
 	for cur.Next(ctx) {
 		doc := make(bson.M)
 		if err := cur.Decode(&doc); err != nil {
 			return fmt.Errorf("decode document: %w", err)
 		}
-		if _, err := target.InsertOne(ctx, doc); err != nil {
-			return fmt.Errorf("insert document: %w", err)
+		buf = append(buf, doc)
+		if len(buf) >= 100 {
+			if _, err := target.InsertMany(ctx, buf); err != nil {
+				return fmt.Errorf("insert documents: %w", err)
+			}
+			buf = make([]interface{}, 0, 100)
 		}
+	}
+
+	if _, err := target.InsertMany(ctx, buf); err != nil {
+		return fmt.Errorf("insert documents: %w", err)
 	}
 
 	if err := cur.Err(); err != nil {
