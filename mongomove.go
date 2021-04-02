@@ -36,6 +36,7 @@ type importConfig struct {
 	verbose     bool
 	pingTimeout time.Duration
 	parallel    int
+	batchSize   int
 }
 
 // FilterDatabases returns an ImportOption which filters databases by their
@@ -95,6 +96,14 @@ func Parallel(p int) ImportOption {
 	}
 }
 
+// BatchSize returns an ImportOption that specifies the batch size when
+// inserting documents.
+func BatchSize(size int) ImportOption {
+	return func(cfg *importConfig) {
+		cfg.batchSize = size
+	}
+}
+
 // New returns an Importer that imports databases from source to target. New
 // panics if source or target is nil.
 func New(source, target *mongo.Client) *Importer {
@@ -121,6 +130,9 @@ func (i *Importer) Import(ctx context.Context, opts ...ImportOption) error {
 	}
 	if cfg.parallel < 1 {
 		cfg.parallel = 1
+	}
+	if cfg.batchSize < 1 {
+		cfg.batchSize = 1
 	}
 
 	if err := i.ping(ctx, cfg.pingTimeout); err != nil {
@@ -259,7 +271,7 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 	}
 	defer cur.Close(ctx)
 
-	buf := make([]interface{}, 0, 100)
+	buf := make([]interface{}, 0, cfg.batchSize)
 
 	for cur.Next(ctx) {
 		doc := make(bson.M)
@@ -267,11 +279,11 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 			return fmt.Errorf("decode document: %w", err)
 		}
 		buf = append(buf, doc)
-		if len(buf) >= 100 {
+		if len(buf) >= cfg.batchSize {
 			if _, err := target.InsertMany(ctx, buf); err != nil {
 				return fmt.Errorf("insert documents: %w", err)
 			}
-			buf = make([]interface{}, 0, 100)
+			buf = make([]interface{}, 0, cfg.batchSize)
 		}
 	}
 

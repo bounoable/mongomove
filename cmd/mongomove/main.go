@@ -21,6 +21,7 @@ func main() {
 	drop := flag.Bool("drop", false, "Drop target databases before import")
 	skipConfirm := flag.Bool("confirm", false, "Don't ask for confirmation")
 	parallel := flag.Int("parallel", 1, "Control parallelism")
+	batchSize := flag.Int("batch", 1, "Batch inserts")
 	verbose := flag.Bool("verbose", false, "Log debug info")
 
 	// short flags
@@ -29,6 +30,7 @@ func main() {
 	flag.BoolVar(drop, "d", false, "Drop target databases before import")
 	flag.BoolVar(skipConfirm, "c", false, "Don't ask for confirmation")
 	flag.IntVar(parallel, "p", 1, "Control parallelism")
+	flag.IntVar(batchSize, "b", 1, "Batch inserts")
 	flag.BoolVar(verbose, "v", false, "Log debug info")
 
 	flag.Parse()
@@ -81,7 +83,7 @@ func main() {
 	if *verbose {
 		opts = append(opts, mongomove.Verbose(true))
 	}
-	opts = append(opts, mongomove.Parallel(*parallel))
+	opts = append(opts, mongomove.Parallel(*parallel), mongomove.BatchSize(*batchSize))
 
 	start := time.Now()
 	if err := i.Import(ctx, opts...); err != nil {
