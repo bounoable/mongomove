@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -20,8 +21,8 @@ func main() {
 	prefix := flag.String("prefix", "", "Database prefix (filter)")
 	drop := flag.Bool("drop", false, "Drop target databases before import")
 	skipConfirm := flag.Bool("confirm", false, "Don't ask for confirmation")
-	parallel := flag.Int("parallel", 1, "Control parallelism")
-	batchSize := flag.Int("batch", 1, "Batch inserts")
+	parallel := flag.Int("parallel", runtime.NumCPU(), "Control parallelism")
+	batchSize := flag.Int("batch", 100, "Batch inserts")
 	verbose := flag.Bool("verbose", false, "Log debug info")
 
 	// short flags
@@ -29,8 +30,8 @@ func main() {
 	flag.StringVar(target, "t", "mongodb://127.0.0.1:27018", "Target URI")
 	flag.BoolVar(drop, "d", false, "Drop target databases before import")
 	flag.BoolVar(skipConfirm, "c", false, "Don't ask for confirmation")
-	flag.IntVar(parallel, "p", 1, "Control parallelism")
-	flag.IntVar(batchSize, "b", 1, "Batch inserts")
+	flag.IntVar(parallel, "p", runtime.NumCPU(), "Control parallelism")
+	flag.IntVar(batchSize, "b", 100, "Batch inserts")
 	flag.BoolVar(verbose, "v", false, "Log debug info")
 
 	flag.Parse()
@@ -56,14 +57,14 @@ func main() {
 
 	sourcec, err := mongo.Connect(ctx, options.Client().ApplyURI(*source))
 	if err != nil {
-		fmt.Println(fmt.Errorf("Failed to connect to source: %w", err))
+		fmt.Printf("Failed to connect to source: %v\n", err)
 		os.Exit(1)
 	}
 	defer sourcec.Disconnect(context.Background())
 
 	targetc, err := mongo.Connect(ctx, options.Client().ApplyURI(*target))
 	if err != nil {
-		fmt.Println(fmt.Errorf("Failed to connect to target: %w", err))
+		fmt.Printf("Failed to connect to target: %v\n", err)
 		os.Exit(1)
 	}
 	defer targetc.Disconnect(context.Background())
@@ -87,11 +88,11 @@ func main() {
 
 	start := time.Now()
 	if err := i.Import(ctx, opts...); err != nil {
-		fmt.Println(fmt.Errorf("Failed to do import: %w", err))
+		fmt.Printf("Failed to do import: %v\n", err)
 		os.Exit(1)
 	}
 	end := time.Now()
 	dur := end.Sub(start)
 
-	fmt.Println(fmt.Sprintf("Import done after %s.", dur))
+	fmt.Printf("Import done after %s.\n", dur)
 }

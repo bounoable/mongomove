@@ -184,14 +184,16 @@ func (i *Importer) Import(ctx context.Context, opts ...ImportOption) error {
 		}()
 	}
 
-	for _, name := range names {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case jobs <- name:
+	go func() {
+		for _, name := range names {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- name:
+			}
 		}
-	}
-	close(jobs)
+		close(jobs)
+	}()
 
 	done := make(chan struct{})
 	go func() {
@@ -235,6 +237,7 @@ func (i *Importer) importDatabase(ctx context.Context, cfg importConfig, db *mon
 
 	importCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	indexCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -272,6 +275,25 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 	defer cur.Close(ctx)
 
 	buf := make([]interface{}, 0, cfg.batchSize)
+	var batchIter int
+	insertBatch := func() error {
+		if len(buf) == 0 {
+			return nil
+		}
+		batchIter++
+		start := (batchIter - 1) * cfg.batchSize
+		qty := cfg.batchSize
+		if l := len(buf); l < qty {
+			qty = l
+		}
+		end := start + qty - 1
+		cfg.log(fmt.Sprintf("[%s/%s]: Inserting documents (%d - %d)...", col.Database().Name(), col.Name(), start, end))
+		if _, err := target.InsertMany(ctx, buf, options.InsertMany()); err != nil {
+			return fmt.Errorf("insert documents: %w", err)
+		}
+		cfg.log(fmt.Sprintf("[%s/%s]: Inserted documents (%d - %d).", col.Database().Name(), col.Name(), start, end))
+		return nil
+	}
 
 	for cur.Next(ctx) {
 		doc := make(bson.M)
@@ -280,22 +302,22 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 		}
 		buf = append(buf, doc)
 		if len(buf) >= cfg.batchSize {
-			if _, err := target.InsertMany(ctx, buf); err != nil {
-				return fmt.Errorf("insert documents: %w", err)
+			if err := insertBatch(); err != nil {
+				return err
 			}
 			buf = make([]interface{}, 0, cfg.batchSize)
-		}
-	}
-
-	if len(buf) > 0 {
-		if _, err := target.InsertMany(ctx, buf); err != nil {
-			return fmt.Errorf("insert documents: %w", err)
 		}
 	}
 
 	if err := cur.Err(); err != nil {
 		return fmt.Errorf("cursor: %w", err)
 	}
+
+	if err := insertBatch(); err != nil {
+		return err
+	}
+
+	cfg.log(fmt.Sprintf("[%s/%s]: Import done.", col.Database().Name(), col.Name()))
 
 	return nil
 }
@@ -311,7 +333,7 @@ func (i *Importer) ensureIndexes(ctx context.Context, cfg importConfig, db *mong
 }
 
 func (i *Importer) ensureColIndexes(ctx context.Context, cfg importConfig, col *mongo.Collection) error {
-	cfg.log(fmt.Sprintf("[%s]: Ensure collection indexes: %v", col.Database().Name(), col.Name()))
+	cfg.log(fmt.Sprintf("[%s/%s]: Ensure Collection indexes...", col.Database().Name(), col.Name()))
 
 	target := i.target.Database(col.Database().Name()).Collection(col.Name())
 
@@ -324,6 +346,8 @@ func (i *Importer) ensureColIndexes(ctx context.Context, cfg importConfig, col *
 	if err := cur.All(ctx, &models); err != nil {
 		return fmt.Errorf("cursor: %w", err)
 	}
+
+	cfg.log(fmt.Sprintf("[%s/%s]: Found indexes: %v", col.Database().Name(), col.Name(), models))
 
 	if err := cur.Err(); err != nil {
 		return fmt.Errorf("cursor: %w", err)
@@ -360,6 +384,8 @@ func (i *Importer) ensureColIndexes(ctx context.Context, cfg importConfig, col *
 			return fmt.Errorf("create indexes: %w", err)
 		}
 	}
+
+	cfg.log(fmt.Sprintf("[%s/%s]: Indexes created.", col.Database().Name(), col.Name()))
 
 	return nil
 }
