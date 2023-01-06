@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,20 @@ func HasPrefix(prefix string) func(string) bool {
 	return func(s string) bool {
 		return strings.HasPrefix(s, prefix)
 	}
+}
+
+// Exclude returns an ImportOption that prevents database from being imported.
+// Databases that don't match all provided regular expressions will be excluded
+// from the import.
+func Exclude(exprs ...*regexp.Regexp) ImportOption {
+	return FilterDatabases(func(db string) bool {
+		for _, expr := range exprs {
+			if expr.MatchString(db) {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 // Drop returns an ImportOption which drops existing databases in the target
@@ -288,7 +303,7 @@ func (i *Importer) importCollection(ctx context.Context, cfg importConfig, col *
 		}
 		end := start + qty - 1
 		cfg.log(fmt.Sprintf("[%s/%s]: Inserting documents (%d - %d)...", col.Database().Name(), col.Name(), start, end))
-		if _, err := target.InsertMany(ctx, buf, options.InsertMany()); err != nil {
+		if _, err := target.InsertMany(ctx, buf); err != nil {
 			return fmt.Errorf("insert documents: %w", err)
 		}
 		cfg.log(fmt.Sprintf("[%s/%s]: Inserted documents (%d - %d).", col.Database().Name(), col.Name(), start, end))
@@ -399,6 +414,7 @@ L:
 	for _, name := range names {
 		for _, filter := range cfg.dbFilter {
 			if !filter(name) {
+				cfg.log(fmt.Sprintf("Database %q excluded from import.", name))
 				continue L
 			}
 		}
@@ -411,7 +427,9 @@ func (cfg importConfig) dropDB(ctx context.Context, db *mongo.Database) error {
 	if !cfg.drop {
 		return nil
 	}
+
 	cfg.log(fmt.Sprintf("Dropping target database: %v", db.Name()))
+
 	return db.Drop(ctx)
 }
 

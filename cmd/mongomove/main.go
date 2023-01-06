@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"syscall"
 	"time"
@@ -15,10 +16,23 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type excludeList []string
+
+func (el excludeList) String() string {
+	return fmt.Sprintf("%v", []string(el))
+}
+
+func (el *excludeList) Set(val string) error {
+	*el = append(*el, val)
+	return nil
+}
+
 func main() {
+	var exclude excludeList
 	source := flag.String("source", "mongodb://127.0.0.1:27017", "Source URI")
 	target := flag.String("target", "mongodb://127.0.0.1:27018", "Target URI")
 	prefix := flag.String("prefix", "", "Database prefix (filter)")
+	flag.Var(&exclude, "exclude", "Exclude databases (regexp)")
 	drop := flag.Bool("drop", false, "Drop target databases before import")
 	skipConfirm := flag.Bool("confirm", false, "Don't ask for confirmation")
 	parallel := flag.Int("parallel", runtime.NumCPU(), "Control parallelism")
@@ -46,14 +60,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, os.Interrupt)
-	go func() {
-		defer cancel()
-		<-quit
-	}()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
 
 	sourcec, err := mongo.Connect(ctx, options.Client().ApplyURI(*source))
 	if err != nil {
@@ -83,6 +91,18 @@ func main() {
 	}
 	if *verbose {
 		opts = append(opts, mongomove.Verbose(true))
+	}
+	if len(exclude) > 0 {
+		exprs := make([]*regexp.Regexp, len(exclude))
+		for i, ex := range exclude {
+			expr, err := regexp.Compile(ex)
+			if err != nil {
+				fmt.Printf("Failed to compile exclude filter (%v): %v\n", ex, err)
+				os.Exit(1)
+			}
+			exprs[i] = expr
+		}
+		opts = append(opts, mongomove.Exclude(exprs...))
 	}
 	opts = append(opts, mongomove.Parallel(*parallel), mongomove.BatchSize(*batchSize))
 
