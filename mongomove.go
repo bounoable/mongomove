@@ -299,6 +299,8 @@ func (i *Importer) importDatabase(ctx context.Context, cfg importConfig, db *mon
 		if err := i.ensureIndexes(indexCtx, cfg, db, names); err != nil {
 			return fmt.Errorf("ensure indexes: %w", err)
 		}
+	} else {
+		cfg.log("Skipping index creation.")
 	}
 
 	return nil
