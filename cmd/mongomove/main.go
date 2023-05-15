@@ -18,10 +18,15 @@ import (
 
 type excludeList []string
 
+// String returns a string representation of the excludeList, converting it into
+// a slice of strings ([]string) and formatting it using the fmt.Sprintf
+// function.
 func (el excludeList) String() string {
 	return fmt.Sprintf("%v", []string(el))
 }
 
+// Set appends the given value to the excludeList and returns any error
+// encountered.
 func (el *excludeList) Set(val string) error {
 	*el = append(*el, val)
 	return nil
@@ -34,6 +39,7 @@ func main() {
 	prefix := flag.String("prefix", "", "Database prefix (filter)")
 	flag.Var(&exclude, "exclude", "Exclude databases (regexp)")
 	drop := flag.Bool("drop", false, "Drop target databases before import")
+	ensureIndexes := flag.Bool("indexes", true, "Create indexes on target")
 	skipConfirm := flag.Bool("confirm", false, "Don't ask for confirmation")
 	parallel := flag.Int("parallel", runtime.NumCPU(), "Control parallelism")
 	batchSize := flag.Int("batch", 100, "Batch inserts")
@@ -80,6 +86,8 @@ func main() {
 	i := mongomove.New(sourcec, targetc)
 
 	var opts []mongomove.ImportOption
+	opts = append(opts, mongomove.EnsureIndexes(*ensureIndexes))
+
 	if *prefix != "" {
 		opts = append(opts, mongomove.FilterDatabases(mongomove.HasPrefix(*prefix)))
 	}

@@ -62,6 +62,12 @@ databases concurrently until all databases have been imported:
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -p 2
 ```
 
+## Disable index creation
+
+```sh
+mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -indexes false
+```
+
 ## Verbose output
 
 ```sh

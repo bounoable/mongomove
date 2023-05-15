@@ -21,46 +21,63 @@ const (
 	defaultPingTimeout = 5 * time.Second
 )
 
-// Importer imports the databases from one Client to another.
+// Importer is a type that performs data import operations between two MongoDB
+// instances, handling database filtering, index management, and parallel
+// processing for efficient data transfers. It provides options to customize the
+// import process, such as specifying filters for databases, ensuring indexes
+// are created on the target instance, and configuring batch sizes and parallel
+// processing.
 type Importer struct {
 	source *mongo.Client
 	target *mongo.Client
 }
 
-// ImportOption is an option for the Importer.
+// ImportOption is a configuration function that modifies the importConfig
+// struct, allowing users to customize the behavior of the Importer when
+// importing data from one MongoDB instance to another. It provides options for
+// filtering databases, ensuring indexes, dropping existing data, skipping
+// confirmation prompts, and adjusting parallelism and batch sizes for
+// performance tuning.
 type ImportOption func(*importConfig)
 
 type importConfig struct {
-	dbFilter    []func(string) bool
-	drop        bool
-	skipConfirm bool
-	verbose     bool
-	pingTimeout time.Duration
-	parallel    int
-	batchSize   int
+	dbFilter      []func(string) bool
+	ensureIndexes bool
+	drop          bool
+	skipConfirm   bool
+	verbose       bool
+	pingTimeout   time.Duration
+	parallel      int
+	batchSize     int
 }
 
-// FilterDatabases returns an ImportOption which filters databases by their
-// name. If any of the provided filters returns false, the database will not be
-// imported.
+// FilterDatabases returns an ImportOption that appends one or more filter
+// functions to the importConfig's dbFilter list. These filter functions are
+// used to determine which databases should be imported.
 func FilterDatabases(filter ...func(string) bool) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.dbFilter = append(cfg.dbFilter, filter...)
 	}
 }
 
-// HasPrefix returns a function which accepts a string and returns if the string
-// has the given prefix. This function can be used as a filter for the
-// FilterDatabases function.
+// EnsureIndexes sets the ensureIndexes field in the importConfig struct to the
+// provided boolean value. If set to true, the function ensures that indexes are
+// created on the target database during the import process.
+func EnsureIndexes(ensure bool) ImportOption {
+	return func(cfg *importConfig) {
+		cfg.ensureIndexes = ensure
+	}
+}
+
+// HasPrefix returns a function that checks if a given string has the specified
+// prefix. The returned function accepts a string and returns true if the input
+// string starts with the specified prefix, otherwise false.
 func HasPrefix(prefix string) func(string) bool {
 	return func(s string) bool {
 		return strings.HasPrefix(s, prefix)
 	}
 }
 
-// Exclude returns an ImportOption that prevents database from being imported.
-// Databases that don't match all provided regular expressions will be excluded
-// from the import.
 func Exclude(exprs ...*regexp.Regexp) ImportOption {
 	return FilterDatabases(func(db string) bool {
 		for _, expr := range exprs {
@@ -72,55 +89,59 @@ func Exclude(exprs ...*regexp.Regexp) ImportOption {
 	})
 }
 
-// Drop returns an ImportOption which drops existing databases in the target
-// Client before importing them.
+// Drop sets the drop option for the importConfig. If true, the target database
+// will be dropped before importing data.
 func Drop(drop bool) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.drop = drop
 	}
 }
 
-// SkipConfirm returns an ImportOption which disables the manual confirmation
-// of imports. Use with caution!
+// SkipConfirm sets whether to skip the confirmation prompt during the import
+// process. If set to true, it will bypass the confirmation and proceed with the
+// import without user interaction.
 func SkipConfirm(skip bool) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.skipConfirm = skip
 	}
 }
 
-// PingTimeout returns an ImportOptions which sets the timeout when pinging the
-// mongo.Clients.
+// PingTimeout sets the duration for the ping timeout when establishing a
+// connection to the source and target MongoDB instances.
 func PingTimeout(d time.Duration) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.pingTimeout = d
 	}
 }
 
-// Verbose returns an ImportOption which enables debugging output.
+// Verbose sets the verbosity of the import process. If set to true, additional
+// log messages will be printed during the import process.
 func Verbose(v bool) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.verbose = v
 	}
 }
 
-// Parallel returns an ImportOption that specififies how many databases should
-// be imported in parallel.
+// Parallel sets the number of parallel import operations to be performed by the
+// Importer. It takes an integer value as an input and returns an ImportOption
+// function.
 func Parallel(p int) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.parallel = p
 	}
 }
 
-// BatchSize returns an ImportOption that specifies the batch size when
-// inserting documents.
+// BatchSize sets the size of the batches used when importing data from the
+// source to the target database.
 func BatchSize(size int) ImportOption {
 	return func(cfg *importConfig) {
 		cfg.batchSize = size
 	}
 }
 
-// New returns an Importer that imports databases from source to target. New
-// panics if source or target is nil.
+// New creates a new Importer instance with the specified source and target
+// MongoDB clients. The source and target clients must not be nil; otherwise, it
+// panics.
 func New(source, target *mongo.Client) *Importer {
 	if source == nil {
 		panic("<nil> client (source)")
@@ -134,11 +155,14 @@ func New(source, target *mongo.Client) *Importer {
 	}
 }
 
-// Import imports the databases from the source to the target Client. Provide
-// opts to alter the import behaviour.
+// Import imports the specified databases from the source MongoDB client to the
+// target MongoDB client using the provided import options. It handles database
+// filtering, dropping existing databases, ensuring indexes, and parallelizing
+// import operations.
 func (i *Importer) Import(ctx context.Context, opts ...ImportOption) error {
 	cfg := importConfig{
-		pingTimeout: defaultPingTimeout,
+		pingTimeout:   defaultPingTimeout,
+		ensureIndexes: true,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -271,8 +295,10 @@ func (i *Importer) importDatabase(ctx context.Context, cfg importConfig, db *mon
 		return err
 	}
 
-	if err := i.ensureIndexes(indexCtx, cfg, db, names); err != nil {
-		return fmt.Errorf("ensure indexes: %w", err)
+	if cfg.ensureIndexes {
+		if err := i.ensureIndexes(indexCtx, cfg, db, names); err != nil {
+			return fmt.Errorf("ensure indexes: %w", err)
+		}
 	}
 
 	return nil
