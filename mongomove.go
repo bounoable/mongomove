@@ -182,9 +182,9 @@ func (i *Importer) Import(ctx context.Context, opts ...ImportOption) error {
 	if err != nil {
 		return fmt.Errorf("list database names: %w", err)
 	}
-	log.Println(fmt.Sprintf("Found databases: %v", names))
+	log.Printf("Found databases: %v", names)
 	names = cfg.filterDatabases(names...)
-	log.Println(fmt.Sprintf("Filtered databases: %v", names))
+	log.Printf("Filtered databases: %v", names)
 
 	confirmed, err := cfg.confirm()
 	if err != nil {
