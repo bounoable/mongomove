@@ -2,79 +2,75 @@
 
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/bounoable/mongomove)](https://pkg.go.dev/github.com/bounoable/mongomove)
 
-This tool imports your databases from one MongoDB server to another. I use this
-package when I need to import databases from MongoDB Atlas to my local machine
-for development.
+`mongomove` is a utility tool that facilitates the migration of databases from
+one MongoDB server to another. It's especially handy for transferring data
+between remote servers and local development environments.
 
-## Install
+## Installation
 
-### Binary
-
+### As a Command-line Tool:
 ```sh
 go install github.com/bounoable/mongomove/cmd/mongomove@latest
 ```
 
-### As a library
-
+### As a Library:
 ```sh
 go get github.com/bounoable/mongomove
 ```
 
-## Import all databases
+## Usage
 
-Import all databases from `mongodb://127.0.0.1:27017` to
-`mongodb://127.0.0.1:27018`:
+### Import All Databases
 
+Move databases from one server to another:
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018
 ```
 
-## Filter databases by prefix
+### Filter Databases By Prefix
 
-Import all databases that have the `my_` prefix from `mongodb://127.0.0.1:27017`
-to `mongodb://127.0.0.1:27018`:
-
+Migrate databases that start with a specific prefix:
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -prefix my_
 ```
 
-## Skip confirmation
+### Skip Confirmation
 
+To bypass the confirmation prompt:
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -confirm
 ```
 
-## Insert documents in batches
+### Insert Documents in Batches
 
-Default batch size is 100. Following command inserts documents in batches of 500 documents:
+Specify the number of documents to process in a single batch (default is 100):
 
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -b 500
 ```
 
-## Parallelize import
+### Parallelize the Import Process
 
-By default mongomove uses the number of CPUs to parallelize the import, so that
-1 CPU is importing 1 database at a time. The following command imports 2
-databases concurrently until all databases have been imported:
-
+Set the number of concurrent database imports. By default, `mongomove` uses the number of CPUs available:
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -p 2
 ```
 
-## Disable index creation
+### Disable Index Creation
 
+Prevent the creation of indexes during import:
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -indexes false
 ```
 
-## Verbose output
+### Enable Verbose Output
+
+For a more detailed output:
 
 ```sh
 mongomove -source mongodb://127.0.0.1:27017 -target mongodb://127.0.0.1:27018 -v
 ```
 
-
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE).
